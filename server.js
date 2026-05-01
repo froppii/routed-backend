@@ -3,6 +3,8 @@ const axios = require('axios');
 const GtfsRealtimeBindings = require('gtfs-realtime-bindings');
 const cors = require('cors');
 
+const { loadStops, getStopById, getAllStops } = require('./gtfs/stops');
+
 const app = express();
 app.use(cors());
 
@@ -132,6 +134,10 @@ app.get('/routes', async (req, res) => {
     }
 });
 
+app.get('/stops', (req, res) => {
+    res.json(getAllStops());
+});
+
 // get stop arrivals
 app.get('/stop/:stopId', async (req, res) => {
     const { stopId } = req.params;
@@ -140,8 +146,10 @@ app.get('/stop/:stopId', async (req, res) => {
         const data = await getFeedData();
         const arrivals = getArrivalsByStop(data, stopId);
 
+        const stopInfo = getStopById(stopId);
+
         res.json({
-            stopId,
+            stop: stopInfo || { id: stopId, name: 'unknown' },
             arrivals,
         });
     } catch {
@@ -159,6 +167,12 @@ app.get('/debug', async (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`routed backend running on https://localhost:${PORT}`);
-})
+async function startServer() {
+    await loadStops();
+    
+    app.listen(PORT, () => {
+        console.log(`routed backend running on https://localhost:${PORT}`);
+    });
+}
+
+startServer();
