@@ -43,7 +43,7 @@ async function fetchAllFeeds() {
         )
     );
 
-    return decodedFeeds = responses.flatMap((feed) => feed.entity);
+    return decodedFeeds.flatMap((feed) => feed.entity);
 }
 
 async function getFeedData() {
@@ -70,8 +70,25 @@ async function getFeedData() {
     }
 }
 
+// convert unix to minutes
+function getMinutesAway(timestamp) {
+    const now = Math.floor(Date.now() / 1000);
+    return Math.round((timestamp - now) / 60);
+}
+
+function resolveStop(stopId) {
+    let stop = getStopById(stopId);
+
+    if (!stop) {
+        const base = stopId.slice(0, -1);
+        stop = getStopById(base);
+    }
+
+    return stop;
+}
+
 function getArrivalsByStop(entities, stopId) {
-    const arrival = [];
+    const arrivals = [];
 
     entities.forEach((entity) => {
         const trip = entity.tripUpdate;
