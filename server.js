@@ -4,6 +4,18 @@ const GtfsRealtimeBindings = require('gtfs-realtime-bindings');
 const cors = require('cors');
 
 const { loadStops, getStopById, getAllStops } = require('./gtfs/stops');
+const { loadShapes, getShape } = require('./gtfs/shapes');
+const { loadTrips, getShapeId } = require('./gtfs/trips');
+
+async function start() {
+    await loadStops();
+    await loadTrips();
+    await loadShapes();
+
+    app.listen(PORT, () => {
+        console.log(`backend running at http://localhost:${PORT}`);
+    });
+}
 
 const app = express();
 app.use(cors());
@@ -174,6 +186,58 @@ app.get('/stop/:stopId', async (req, res) => {
     }
 });
 
+app.get('/vehicles', async (req, res) => {
+    try {
+        const data = await getFeedData();
+        const vehicles = [];
+
+        data.forEach((entity) => {
+            const trip = entity.tripUpdate;
+            if (!trip) return;
+
+            const updates = trip.stopTimeUpdate;
+            if (!updates || updates.length < 2) return;
+
+            const tripId = trip.trip.tripId;
+            const shapeId = getShapeId(tripId);
+            const shape = getShape(shapeId);
+
+            if (!shape) return;
+
+            for (let i = 0; i < updates.length - 1; i++) {
+                const current = updates[i];
+                const next = updates[i + 1];
+
+                if (!current.arrival?.time || !next.arrival?.time) continue;
+
+                const now = Date.now() / 1000;
+
+                if (now >= current.arrival.time && now <= next.arrival.time) {
+                    const progress = (now - current.arrival.time) / (next.arrival.time - current.arrival.time);
+                    
+                    const pos = interpolateAlongShape(shape, progress);
+
+                    if (pos) {
+                        vehicles.push({
+                            route: trip.trip.routeId,
+                            tripId,
+                            lat: pos.lat,
+                            lon: pos.lon,
+                        });
+                    }
+
+                    break;
+                }
+            }
+        });
+
+        res.json(vehicles);
+    } catch (err) {
+        console.error(err);
+        res.status(500).send('error');
+    }
+});
+
 // get raw merged data
 app.get('/debug', async (req, res) => {
     try {
@@ -184,8 +248,28 @@ app.get('/debug', async (req, res) => {
     }
 });
 
+function interpolateAlongShape(shape, progress) {
+    if (!shape || shape.length === 0) return null;
+
+    const totalPoint = shape.length;
+    const index = progress * (totalPoint - 1);
+
+    const i = Math.floor(index);
+    const t = index - i;
+
+    const p1 = shape[i];
+    const p2 = shape[i + 1] || p1;
+
+    return {
+        lat: p1.lat + ( p2.lat - p1.lat) * t,
+        lon: p1.lon + ( p2.lon - p1.lon) * t,
+    };
+}
+
 async function startServer() {
     await loadStops();
+    await loadTrips();
+    await loadShapes();
     
     app.listen(PORT, () => {
         console.log(`routed backend running on https://localhost:${PORT}`);
